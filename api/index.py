@@ -6,11 +6,10 @@ from http.server import BaseHTTPRequestHandler
 import json
 
 # 1. AMBIL API KEY DARI 'ENVIRONMENT VARIABLES' VERCEL
-# Kita tidak menulis API key di sini. Kita akan mengaturnya di Vercel.
+# (Ini sudah benar, JANGAN DIGANTI)
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY_DARI_VERCEL')
 
-# 2. KONFIGURASI MODEL (Versi Modern)
-# Server Vercel akan meng-install library versi BARU, jadi kode ini akan BERHASIL.
+# 2. KONFIGURASI MODEL
 try:
     genai.configure(api_key=GEMINI_API_KEY)
 except Exception as e:
@@ -23,7 +22,7 @@ generation_config = {
     "max_output_tokens": 1024,
 }
 
-# Pengaturan keamanan yang akan BERFUNGSI di library modern
+# Pengaturan keamanan (kita tetap coba kirim, walau mungkin diabaikan)
 safety_settings = [
     {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
     {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
@@ -31,47 +30,54 @@ safety_settings = [
     {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
 ]
 
+# Nama model yang SUDAH TERBUKTI BISA di environment Anda
 model = genai.GenerativeModel(
-    model_name="models/gemini-pro-latest", # Kita bisa pakai model modern
-    generation_config=generation_config,
-    safety_settings=safety_settings
+    model_name="models/gemini-pro-latest", # INI NAMA YANG BENAR
+    generation_config=generation_config
+    # safety_settings akan kita kirim saat 'send_message'
 )
 
-# 3. FUNGSI ANALISIS (Logika "Koki")
+# 3. FUNGSI ANALISIS (Logika "Koki" dengan PROMPT BARU)
 def analyze_with_gemini(article_text):
-    prompt_template = """
-    Anda adalah asisten Cek Fakta yang sangat teliti dan objektif.
-    Tugas Anda adalah menganalisis teks artikel berita yang diberikan oleh pengguna.
     
-    TOLONG ANALISIS TEKS DI BAWAH INI:
+    # --- PERBAIKAN DI SINI: PROMPT BARU YANG LEBIH HALUS ---
+    prompt_template = """
+    Anda adalah asisten riset yang netral dan objektif.
+    Tugas Anda adalah membandingkan teks yang diberikan pengguna dengan informasi yang tersedia untuk umum.
+    
+    TOLONG PERIKSA TEKS DI BAWAH INI:
     ---
     {artikel}
     ---
     
-    Berikan respons Anda dalam format berikut:
+    Tolong berikan respons Anda:
     
-    1.  **Klasifikasi:** (Berikan satu: HOAKS / KEMUNGKINAN BESAR HOAKS / TIDAK TERBUKTI / FAKTA / KEMUNGKINAN BESAR FAKTA)
-    2.  **Skor Kepercayaan:** (Berikan skor dari 0% hingga 100%, di mana 100% berarti "Sangat Terpercaya/Fakta")
-    3.  **Ringkasan Analisis:** (Jelaskan *mengapa* Anda memberikan klasifikasi tersebut.)
-    4.  **Sumber Pembanding:** (Jika memungkinkan, berikan 1-2 link URL ke sumber kredibel.)
+    1.  **Ringkasan Klaim:** (Apa klaim utama dari teks di atas? Tulis dalam 1 kalimat)
+    2.  **Perbandingan Fakta:** (Berdasarkan informasi yang tersedia untuk umum, apakah klaim tersebut akurat? Jelaskan temuan Anda secara netral. Jika klaim itu tidak akurat, tolong berikan informasi yang benar.)
+    3.  **Sumber Kredibel:** (Jika memungkinkan, berikan 1-2 link URL ke sumber kredibel yang membahas klaim ini.)
     """
+    # -----------------------------------------------------------
     
     full_prompt = prompt_template.format(artikel=article_text)
     
     try:
         convo = model.start_chat()
-        convo.send_message(full_prompt)
+        # Mengirim prompt + safety_settings (sintaks library lama)
+        convo.send_message(
+            full_prompt,
+            safety_settings=safety_settings
+        )
         return convo.last.text
     except Exception as e:
         print(f"Error saat memanggil Gemini API: {e}")
+        # Mengembalikan error ke Streamlit agar kita tahu apa yang salah
         return f"Error: Gagal menganalisis teks dengan AI. {e}"
 
-# 4. HANDLER VERCEL (Pintu Masuk API)
-# Kode ini yang membuat file ini menjadi "API"
+# 4. HANDLER VERCEL (Pintu Masuk API) - TIDAK BERUBAH
 class handler(BaseHTTPRequestHandler):
     
     def do_POST(self):
-        # Baca data yang dikirim oleh Streamlit
+        # Baca data JSON yang dikirim oleh Streamlit
         content_length = int(self.headers['Content-Length'])
         data = self.rfile.read(content_length)
         body = json.loads(data.decode('utf-8'))
@@ -86,7 +92,7 @@ class handler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({"error": "Tidak ada teks 'artikel' ditemukan"}).encode('utf-8'))
             return
 
-        # Panggil "Koki"
+        # Panggil "Koki" (Gemini)
         analysis_result = analyze_with_gemini(article_text)
         
         # Kirim balasan (hasil analisis) kembali ke Streamlit
@@ -94,4 +100,4 @@ class handler(BaseHTTPRequestHandler):
         self.send_header('Content-type', 'application/json')
         self.end_headers()
         self.wfile.write(json.dumps({"hasil_analisis": analysis_result}).encode('utf-8'))
-        returnS
+        return
