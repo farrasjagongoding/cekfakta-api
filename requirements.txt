@@ -1,0 +1,3 @@
+# D:\cekfakta-api\requirements.txt
+
+google-generativeai
